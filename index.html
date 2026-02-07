@@ -68,8 +68,8 @@ let rightScore = 0;
 // GAME STATE
 let gameOver = false;
 
-// DIFFICULTY RATIOS
-let hitChance = 0.55;
+// DIFFICULTY RATIOS (hit chance)
+let hitChance = 0.55; // normal default
 
 // FLASH SYSTEM
 let leftFlash = null;
@@ -90,8 +90,8 @@ function setSlow() {
     slowMode = true;
     selectButton("slowBtn");
 
-    ball.speedX = ball.baseSpeedX * 0.5 * Math.sign(ball.speedX);
-    ball.speedY = ball.baseSpeedY * 0.5 * Math.sign(ball.speedY);
+    ball.speedX = ball.baseSpeedX * 0.5 * Math.sign(ball.speedX || 1);
+    ball.speedY = ball.baseSpeedY * 0.5 * Math.sign(ball.speedY || 1);
 }
 
 // SET DIFFICULTY
@@ -111,8 +111,8 @@ function setDifficulty(mode) {
         selectButton("hardBtn");
     }
 
-    ball.speedX = ball.baseSpeedX * Math.sign(ball.speedX);
-    ball.speedY = ball.baseSpeedY * Math.sign(ball.speedY);
+    ball.speedX = ball.baseSpeedX * Math.sign(ball.speedX || 1);
+    ball.speedY = ball.baseSpeedY * Math.sign(ball.speedY || 1);
 }
 
 // INPUT (iPad-safe)
@@ -124,15 +124,15 @@ window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // FLASH LEFT SIDE
+    // FLASH LEFT SIDE (stronger)
     if (leftFlash) {
-        ctx.fillStyle = leftFlash === "green" ? "rgba(0,255,0,0.3)" : "rgba(255,0,0,0.3)";
+        ctx.fillStyle = leftFlash === "green" ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)";
         ctx.fillRect(0, 0, canvas.width/2, canvas.height);
     }
 
-    // FLASH RIGHT SIDE
+    // FLASH RIGHT SIDE (stronger)
     if (rightFlash) {
-        ctx.fillStyle = rightFlash === "green" ? "rgba(0,255,0,0.3)" : "rgba(255,0,0,0.3)";
+        ctx.fillStyle = rightFlash === "green" ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)";
         ctx.fillRect(canvas.width/2, 0, canvas.width/2, canvas.height);
     }
 
@@ -143,9 +143,9 @@ function draw() {
     ctx.lineTo(canvas.width/2, canvas.height);
     ctx.stroke();
 
-    // DRAW TRAIL (metallic purple squares)
+    // TRAIL (brighter, longer metallic purple squares)
     trail.forEach(t => {
-        ctx.fillStyle = `rgba(180, 0, 255, ${t.life})`;
+        ctx.fillStyle = `rgba(200, 0, 255, ${t.life})`;
         ctx.fillRect(t.x, t.y, ball.size, ball.size);
     });
 
@@ -199,7 +199,7 @@ function update() {
 
     leftPaddle.y = Math.max(0, Math.min(canvas.height - paddleHeight, leftPaddle.y));
 
-    // AI movement
+    // AI movement with hit/miss chance
     let aiCenter = rightPaddle.y + paddleHeight / 2;
 
     if (Math.random() < hitChance) {
@@ -216,10 +216,10 @@ function update() {
     ball.x += ball.speedX;
     ball.y += ball.speedY;
 
-    // ADD TRAIL
-    trail.push({ x: ball.x, y: ball.y, life: 1.0 });
-    if (trail.length > 20) trail.shift();
-    trail.forEach(t => t.life -= 0.05);
+    // TRAIL UPDATE (longer, slower fade)
+    trail.push({ x: ball.x, y: ball.y, life: 0.9 });
+    if (trail.length > 40) trail.shift();
+    trail.forEach(t => t.life -= 0.03);
     trail = trail.filter(t => t.life > 0);
 
     // Ball collision with top/bottom
@@ -277,7 +277,7 @@ function update() {
         gameOver = true;
     }
 
-    // MISSES
+    // MISSES + FLASH
     if (ball.x < 0) {
         leftFlash = "red";
         flashTimerLeft = 60;
