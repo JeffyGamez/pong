@@ -68,7 +68,7 @@ let rightScore = 0;
 // GAME STATE
 let gameOver = false;
 
-// DIFFICULTY RATIOS
+// DIFFICULTY RATIOS (hit chance)
 let hitChance = 0.55; // normal default
 
 // FLASH SYSTEM
@@ -77,7 +77,7 @@ let rightFlash = null;
 let flashTimerLeft = 0;
 let flashTimerRight = 0;
 
-// AI MEMORY
+// AI MEMORY (prevents jitter)
 let aiTimer = 0;
 let aiTargetY = canvas.height / 2;
 
@@ -115,12 +115,12 @@ function setDifficulty(mode) {
         selectButton("hardBtn");
     }
 
-    // Reset ball speed (never speeds up)
+    // Reset ball speed to normal (no speed-up)
     ball.speedX = ball.baseSpeedX * Math.sign(ball.speedX || 1);
     ball.speedY = ball.baseSpeedY * Math.sign(ball.speedY || 1);
 }
 
-// AUTO-SELECT NORMAL MODE
+// AUTO-SELECT NORMAL MODE ON LOAD
 selectButton("normalBtn");
 
 // INPUT (iPad-safe)
@@ -207,7 +207,7 @@ function update() {
 
     leftPaddle.y = Math.max(0, Math.min(canvas.height - paddleHeight, leftPaddle.y));
 
-    // --- AI movement with stable target ---
+    // --- AI movement with stable target (no jitter, no corner freeze) ---
     let aiCenter = rightPaddle.y + paddleHeight / 2;
 
     aiTimer++;
@@ -252,11 +252,6 @@ function update() {
 
         leftFlash = "green";
         flashTimerLeft = 60;
-
-        // FIX: Prevent corner infinite bounce
-        if (ball.y < 20 || ball.y > canvas.height - 20) {
-            ball.speedY = (Math.random() * 4 + 2) * (Math.random() < 0.5 ? -1 : 1);
-        }
     }
 
     // RIGHT paddle hit
@@ -269,11 +264,6 @@ function update() {
 
         rightFlash = "green";
         flashTimerRight = 60;
-
-        // FIX: Prevent corner infinite bounce
-        if (ball.y < 20 || ball.y > canvas.height - 20) {
-            ball.speedY = (Math.random() * 4 + 2) * (Math.random() < 0.5 ? -1 : 1);
-        }
     }
 
     // WIN CONDITION
