@@ -27,6 +27,7 @@
 </head>
 <body>
 
+<!-- UI BUTTONS (RESTORED) -->
 <div class="buttons">
   <button id="slowBtn" onclick="setSlow()">Slow</button>
   <button id="easyBtn" onclick="setDifficulty('easy')">Easy</button>
@@ -34,8 +35,145 @@
   <button id="hardBtn" onclick="setDifficulty('hard')">Hard</button>
 </div>
 
+<!-- GAME CANVAS -->
 <canvas id="game" width="800" height="500"></canvas>
 
 <script>
 const canvas = document.getElementById("game");
-const ctx = canvas.getContext
+const ctx = canvas.getContext("2d");
+
+// PADDLES (snug against edges)
+const paddleWidth = 15;
+const paddleHeight = 100;
+
+let leftPaddle = { x: 0, y: canvas.height/2 - paddleHeight/2, speed: 6 };
+let rightPaddle = { x: canvas.width - paddleWidth, y: canvas.height/2 - paddleHeight/2, speed: 4 };
+
+// BALL
+let ball = {
+    x: canvas.width/2,
+    y: canvas.height/2,
+    size: 12,
+    speedX: 4,
+    speedY: 3,
+    baseSpeedX: 4,
+    baseSpeedY: 3
+};
+
+// TRAIL SYSTEM
+let trail = [];
+
+// SCORES
+let leftScore = 0;
+let rightScore = 0;
+
+// GAME STATE
+let gameOver = false;
+
+// DIFFICULTY RATIOS
+let hitChance = 0.55; // normal default
+
+// FLASH SYSTEM
+let leftFlash = null;
+let rightFlash = null;
+let flashTimerLeft = 0;
+let flashTimerRight = 0;
+
+// AI MEMORY
+let aiTimer = 0;
+let aiTargetY = canvas.height / 2;
+
+// BUTTON HIGHLIGHTING
+function selectButton(btn) {
+    document.querySelectorAll("button").forEach(b => b.classList.remove("selected"));
+    document.getElementById(btn).classList.add("selected");
+}
+
+// SLOW MODE
+let slowMode = false;
+
+function setSlow() {
+    slowMode = true;
+    selectButton("slowBtn");
+
+    ball.speedX = ball.baseSpeedX * 0.5 * Math.sign(ball.speedX || 1);
+    ball.speedY = ball.baseSpeedY * 0.5 * Math.sign(ball.speedY || 1);
+}
+
+// SET DIFFICULTY + AI PERSONALITIES
+function setDifficulty(mode) {
+    slowMode = false;
+
+    if (mode === "easy") {
+        hitChance = 0.30;
+        rightPaddle.speed = 3; // lazy
+        selectButton("easyBtn");
+    }
+    if (mode === "normal") {
+        hitChance = 0.55;
+        rightPaddle.speed = 4; // smooth
+        selectButton("normalBtn");
+    }
+    if (mode === "hard") {
+        hitChance = 0.80;
+        rightPaddle.speed = 5; // fast
+        selectButton("hardBtn");
+    }
+
+    // Reset ball speed (never speeds up)
+    ball.speedX = ball.baseSpeedX * Math.sign(ball.speedX || 1);
+    ball.speedY = ball.baseSpeedY * Math.sign(ball.speedY || 1);
+}
+
+// AUTO-SELECT NORMAL MODE
+setDifficulty("normal");
+
+// INPUT (iPad-safe)
+let keys = {};
+window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+// DRAW EVERYTHING
+function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // FLASH LEFT SIDE
+    if (leftFlash) {
+        ctx.fillStyle = leftFlash === "green" ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)";
+        ctx.fillRect(0, 0, canvas.width/2, canvas.height);
+    }
+
+    // FLASH RIGHT SIDE
+    if (rightFlash) {
+        ctx.fillStyle = rightFlash === "green" ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)";
+        ctx.fillRect(canvas.width/2, 0, canvas.width/2, canvas.height);
+    }
+
+    // Middle red line
+    ctx.strokeStyle = "red";
+    ctx.beginPath();
+    ctx.moveTo(canvas.width/2, 0);
+    ctx.lineTo(canvas.width/2, canvas.height);
+    ctx.stroke();
+
+    // TRAIL (metallic purple squares)
+    trail.forEach(t => {
+        ctx.fillStyle = `rgba(200, 0, 255, ${t.life})`;
+        ctx.fillRect(t.x, t.y, ball.size, ball.size);
+    });
+
+    // Left paddle
+    ctx.fillStyle = "white";
+    ctx.fillRect(leftPaddle.x, leftPaddle.y, paddleWidth, paddleHeight);
+
+    // Right paddle
+    ctx.fillRect(rightPaddle.x, rightPaddle.y, paddleWidth, paddleHeight);
+
+    // Ball
+    ctx.fillStyle = "blue";
+    ctx.fillRect(ball.x, ball.y, ball.size, ball.size);
+
+    // Score
+    ctx.fillStyle = "white";
+    ctx.font = "30px Arial";
+    ctx.fillText(leftScore, canvas.width/2 - 60, 40
