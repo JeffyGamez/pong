@@ -176,4 +176,177 @@ function draw() {
     // Score
     ctx.fillStyle = "white";
     ctx.font = "30px Arial";
-    ctx.fillText(leftScore, canvas.width/2 - 60, 40
+    ctx.fillText(leftScore, canvas.width/2 - 60, 40);
+    ctx.fillText(rightScore, canvas.width/2 + 40, 40);
+
+    // WIN SCREEN
+    if (gameOver) {
+        ctx.fillStyle = "yellow";
+        ctx.font = "60px Arial";
+        ctx.fillText(winnerText, canvas.width/2 - 200, canvas.height/2);
+
+        ctx.font = "30px Arial";
+        ctx.fillText("Tap to Play Again", canvas.width/2 - 140, canvas.height/2 + 60);
+    }
+}
+
+// UPDATE GAME LOGIC
+let winnerText = "";
+
+function update() {
+    if (gameOver) return;
+
+    // FLASH TIMERS
+    if (flashTimerLeft > 0) {
+        flashTimerLeft--;
+        if (flashTimerLeft === 0) leftFlash = null;
+    }
+    if (flashTimerRight > 0) {
+        flashTimerRight--;
+        if (flashTimerRight === 0) rightFlash = null;
+    }
+
+    // Left paddle movement
+    if (keys["w"]) leftPaddle.y -= leftPaddle.speed;
+    if (keys["d"]) leftPaddle.y += leftPaddle.speed;
+
+    leftPaddle.y = Math.max(0, Math.min(canvas.height - paddleHeight, leftPaddle.y));
+
+    // --- AI movement with stable target + deadzone + corner escape ---
+    let aiCenter = rightPaddle.y + paddleHeight / 2;
+
+    aiTimer++;
+    if (aiTimer >= 20) {
+        aiTimer = 0;
+
+        if (Math.random() < hitChance) {
+            aiTargetY = ball.y;
+        } else {
+            let offset = (Math.random() * 200 + 150) * (Math.random() < 0.5 ? -1 : 1);
+            aiTargetY = ball.y + offset;
+        }
+    }
+
+    // Deadzone (prevents jitter)
+    let deadzone = 20;
+
+    if (Math.abs(aiTargetY - aiCenter) > deadzone) {
+        if (aiTargetY < aiCenter) rightPaddle.y -= rightPaddle.speed;
+        if (aiTargetY > aiCenter) rightPaddle.y += rightPaddle.speed;
+    }
+
+    // Corner escape rule
+    if (ball.y < 40 || ball.y > canvas.height - 40) {
+        aiTargetY = canvas.height / 2;
+    }
+
+    rightPaddle.y = Math.max(0, Math.min(canvas.height - paddleHeight, rightPaddle.y));
+
+    // Move ball
+    ball.x += ball.speedX;
+    ball.y += ball.speedY;
+
+    // TRAIL UPDATE
+    trail.push({ x: ball.x, y: ball.y, life: 0.9 });
+    if (trail.length > 40) trail.shift();
+    trail.forEach(t => t.life -= 0.03);
+    trail = trail.filter(t => t.life > 0);
+
+    // Ball collision with top/bottom
+    if (ball.y <= 0 || ball.y + ball.size >= canvas.height) {
+        ball.speedY *= -1;
+    }
+
+    // LEFT paddle hit
+    if (ball.x <= leftPaddle.x + paddleWidth &&
+        ball.y + ball.size >= leftPaddle.y &&
+        ball.y <= leftPaddle.y + paddleHeight) {
+
+        ball.speedX *= -1;
+        leftScore++;
+
+        leftFlash = "green";
+        flashTimerLeft = 60;
+
+        // Prevent corner infinite bounce
+        if (ball.y < 20 || ball.y > canvas.height - 20) {
+            ball.speedY = (Math.random() * 4 + 2) * (Math.random() < 0.5 ? -1 : 1);
+        }
+    }
+
+    // RIGHT paddle hit
+    if (ball.x + ball.size >= rightPaddle.x &&
+        ball.y + ball.size >= rightPaddle.y &&
+        ball.y <= rightPaddle.y + paddleHeight) {
+
+        ball.speedX *= -1;
+        rightScore++;
+
+        rightFlash = "green";
+        flashTimerRight = 60;
+
+        // Prevent corner infinite bounce
+        if (ball.y < 20 || ball.y > canvas.height - 20) {
+            ball.speedY = (Math.random() * 4 + 2) * (Math.random() < 0.5 ? -1 : 1);
+        }
+    }
+
+    // WIN CONDITION
+    if (leftScore >= 20) {
+        winnerText = "YOU WIN!";
+        gameOver = true;
+    }
+    if (rightScore >= 20) {
+        winnerText = "AI WINS!";
+        gameOver = true;
+    }
+
+    // MISSES + FLASH + FIXED RESET LOGIC
+    if (ball.x < 0) {
+        leftFlash = "red";
+        flashTimerLeft = 60;
+
+        // Ball goes to AI side
+        ball.x = canvas.width / 2;
+        ball.y = canvas.height / 2;
+        ball.speedX = Math.abs(ball.baseSpeedX);
+        ball.speedY = (Math.random() * 4 - 2);
+        if (slowMode) ball.speedX *= 0.5;
+    }
+
+    if (ball.x > canvas.width) {
+        rightFlash = "red";
+        flashTimerRight = 60;
+
+        // Ball goes to player side
+        ball.x = canvas.width / 2;
+        ball.y = canvas.height / 2;
+        ball.speedX = -Math.abs(ball.baseSpeedX);
+        ball.speedY = (Math.random() * 4 - 2);
+        if (slowMode) ball.speedX *= 0.5;
+    }
+}
+
+// RESET GAME ON TAP
+canvas.addEventListener("mousedown", () => {
+    if (gameOver) {
+        leftScore = 0;
+        rightScore = 0;
+        gameOver = false;
+        ball.x = canvas.width/2;
+        ball.y = canvas.height/2;
+    }
+});
+
+// GAME LOOP
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+
+</body>
+</html>
