@@ -199,23 +199,34 @@ function update() {
 
     leftPaddle.y = Math.max(0, Math.min(canvas.height - paddleHeight, leftPaddle.y));
 
-    // --- AI movement with smooth hit/miss behavior ---
-    let aiCenter = rightPaddle.y + paddleHeight / 2;
+    // --- AI movement with stable target ---
+let aiCenter = rightPaddle.y + paddleHeight / 2;
 
-    // Decide target: real ball (hit) or offset (miss)
-    let targetY;
+// AI target memory
+if (!window.aiTimer) window.aiTimer = 0;
+if (!window.aiTargetY) window.aiTargetY = ball.y;
+
+// Update target every 10 frames
+window.aiTimer++;
+if (window.aiTimer >= 10) {
+    window.aiTimer = 0;
+
     if (Math.random() < hitChance) {
-        // Correct target: ball center
-        targetY = ball.y;
+        // Correct target
+        window.aiTargetY = ball.y;
     } else {
-        // Wrong target: ball plus offset so it "aims wrong"
-        targetY = ball.y + (ball.y < aiCenter ? -150 : 150);
+        // Wrong target (offset so it misses)
+        let offset = (Math.random() * 200 + 100) * (Math.random() < 0.5 ? -1 : 1);
+        window.aiTargetY = ball.y + offset;
     }
+}
 
-    if (targetY < aiCenter) rightPaddle.y -= rightPaddle.speed;
-    if (targetY > aiCenter) rightPaddle.y += rightPaddle.speed;
+// Move smoothly toward target
+if (window.aiTargetY < aiCenter) rightPaddle.y -= rightPaddle.speed;
+if (window.aiTargetY > aiCenter) rightPaddle.y += rightPaddle.speed;
 
-    rightPaddle.y = Math.max(0, Math.min(canvas.height - paddleHeight, rightPaddle.y));
+// Keep on screen
+rightPaddle.y = Math.max(0, Math.min(canvas.height - paddleHeight, rightPaddle.y));
 
     // Move ball
     ball.x += ball.speedX;
