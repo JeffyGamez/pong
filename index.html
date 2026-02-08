@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title> Super Pong</title>
+<title>Super Pong</title>
 <style>
   body {
     margin: 0;
@@ -62,6 +62,9 @@ const ctx = canvas.getContext('2d');
 const W = canvas.width;
 const H = canvas.height;
 const midX = W / 2;
+
+// Triangle size
+const triSize = 20;
 
 // Paddles
 const paddleWidth = 12;
@@ -155,7 +158,7 @@ function handleRightPaddleInput() {
 
 // AI: 60% hit, 40% miss
 function updateAI() {
-  if (twoPlayer) return; // AI OFF in 2P mode
+  if (twoPlayer) return;
 
   if (ball.vx > 0 && ball.x > midX - 10) {
     if (Math.random() < 0.6) {
@@ -202,9 +205,69 @@ function updateBallSpeed() {
   ball.vy = (ball.vy / mag) * ball.speed;
 }
 
+// FIREBALL CHANCE = 20%
 function maybePowerShot() {
-  ball.isPower = Math.random() < 0.3;
+  ball.isPower = Math.random() < 0.2;
   updateBallSpeed();
+}
+
+// Reflect vector v across normal n
+function reflect(vx, vy, nx, ny) {
+  const dot = vx * nx + vy * ny;
+  return {
+    vx: vx - 2 * dot * nx,
+    vy: vy - 2 * dot * ny
+  };
+}
+
+// Check collision with a line segment
+function checkLineCollision(x1, y1, x2, y2) {
+  const A = { x: x1, y: y1 };
+  const B = { x: x2, y: y2 };
+  const P = { x: ball.x, y: ball.y };
+
+  const ABx = B.x - A.x;
+  const ABy = B.y - A.y;
+  const APx = P.x - A.x;
+  const APy = P.y - A.y;
+
+  const abLenSq = ABx * ABx + ABy * ABy;
+  const t = Math.max(0, Math.min(1, (APx * ABx + APy * ABy) / abLenSq));
+
+  const closestX = A.x + ABx * t;
+  const closestY = A.y + ABy * t;
+
+  const dx = P.x - closestX;
+  const dy = P.y - closestY;
+  const distSq = dx * dx + dy * dy;
+
+  if (distSq <= ballRadius * ballRadius) {
+    const dist = Math.sqrt(distSq) || 1;
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    const r = reflect(ball.vx, ball.vy, nx, ny);
+    ball.vx = r.vx;
+    ball.vy = r.vy;
+
+    ball.x = closestX + nx * (ballRadius + 0.1);
+    ball.y = closestY + ny * (ballRadius + 0.1);
+  }
+}
+
+// Hypotenuse-only triangle collisions
+function checkTriangleBounce() {
+  // Top-left hypotenuse (slopes away from center)
+  checkLineCollision(0, triSize, triSize, 0);
+
+  // Top-right hypotenuse
+  checkLineCollision(W - triSize, 0, W, triSize);
+
+  // Bottom-left hypotenuse
+  checkLineCollision(0, H - triSize, triSize, H);
+
+  // Bottom-right hypotenuse
+  checkLineCollision(W - triSize, H, W, H - triSize);
 }
 
 function rectCircleCollide(px, py, pw, ph, cx, cy, cr) {
@@ -225,6 +288,8 @@ function update() {
   ball.x += ball.vx;
   ball.y += ball.vy;
 
+  checkTriangleBounce();
+
   trail.push({ x: ball.x, y: ball.y, isPower: ball.isPower });
   if (trail.length > TRAIL_MAX_POINTS) trail.shift();
 
@@ -241,7 +306,9 @@ function update() {
                         ball.x, ball.y, ballRadius)) {
     ball.x = leftPaddle.x + paddleWidth + ballRadius;
     ball.vx = Math.abs(ball.vx);
-    leftScore++;
+
+    leftScore += ball.isPower ? 2 : 1;
+
     setFlash('left', 'green');
     maybePowerShot();
   }
@@ -250,7 +317,9 @@ function update() {
                         ball.x, ball.y, ballRadius)) {
     ball.x = rightPaddle.x - ballRadius;
     ball.vx = -Math.abs(ball.vx);
-    rightScore++;
+
+    rightScore += ball.isPower ? 2 : 1;
+
     setFlash('right', 'green');
     maybePowerShot();
   }
@@ -299,26 +368,29 @@ function drawArena() {
   ctx.stroke();
 
   ctx.fillStyle = 'white';
-  const triSize = 20;
 
+  // Top-left
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(triSize, 0);
   ctx.lineTo(0, triSize);
   ctx.fill();
 
+  // Top-right
   ctx.beginPath();
   ctx.moveTo(W, 0);
   ctx.lineTo(W - triSize, 0);
   ctx.lineTo(W, triSize);
   ctx.fill();
 
+  // Bottom-left
   ctx.beginPath();
   ctx.moveTo(0, H);
   ctx.lineTo(triSize, H);
   ctx.lineTo(0, H - triSize);
   ctx.fill();
 
+  // Bottom-right
   ctx.beginPath();
   ctx.moveTo(W, H);
   ctx.lineTo(W - triSize, H);
