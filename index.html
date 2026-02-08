@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Custom Pong</title>
+<title> Super Pong</title>
 <style>
   body {
     margin: 0;
@@ -46,6 +46,7 @@
 
 <div id="controls">
   <button id="slowBtn" class="btn">Slow</button>
+  <button id="twoPBtn" class="btn">2P</button>
   <button id="pauseBtn" class="btn">Pause</button>
   <button id="resetBtn" class="btn">Reset</button>
 </div>
@@ -72,9 +73,10 @@ const paddleSpeed = 6;
 const ballRadius = 8;
 const BASE_SPEED = 4;
 const SLOW_SPEED = 2;
-const FAST_SPEED = 8; // power shot
+const FAST_SPEED = 8;
 let slowMode = false;
 let paused = false;
+let twoPlayer = false;
 
 let leftScore = 0;
 let rightScore = 0;
@@ -105,18 +107,19 @@ let rightPaddle = {
 // Trail
 const trail = [];
 const TRAIL_MAX_POINTS = 30;
-const TRAIL_MAX_DIST = 40; // ~2cm-ish visual distance
+const TRAIL_MAX_DIST = 40;
 
 // Flashes
-let leftFlash = null;  // {color, until}
+let leftFlash = null;
 let rightFlash = null;
 
 // Buttons
 const slowBtn = document.getElementById('slowBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const resetBtn = document.getElementById('resetBtn');
+const twoPBtn = document.getElementById('twoPBtn');
 
-// Keyboard for left paddle
+// Keyboard
 const keys = {};
 window.addEventListener('keydown', e => keys[e.key] = true);
 window.addEventListener('keyup', e => keys[e.key] = false);
@@ -126,31 +129,45 @@ function clampPaddle(p) {
   if (p.y + paddleHeight > H) p.y = H - paddleHeight;
 }
 
+// LEFT PADDLE: W = up, D = down
 function handleLeftPaddleInput() {
-  if (keys['w'] || keys['ArrowUp']) {
+  if (keys['w'] || keys['W']) {
     leftPaddle.y -= leftPaddle.vy;
   }
-  if (keys['s'] || keys['ArrowDown']) {
+  if (keys['d'] || keys['D']) {
     leftPaddle.y += leftPaddle.vy;
   }
   clampPaddle(leftPaddle);
 }
 
-// AI: 60% hit, 40% miss, no jitter
+// RIGHT PADDLE: Arrow keys ONLY when 2P mode is active
+function handleRightPaddleInput() {
+  if (!twoPlayer) return;
+
+  if (keys['ArrowUp']) {
+    rightPaddle.y -= rightPaddle.vy;
+  }
+  if (keys['ArrowDown']) {
+    rightPaddle.y += rightPaddle.vy;
+  }
+  clampPaddle(rightPaddle);
+}
+
+// AI: 60% hit, 40% miss
 function updateAI() {
-  // Only choose a new target when ball is clearly coming toward right side
+  if (twoPlayer) return; // AI OFF in 2P mode
+
   if (ball.vx > 0 && ball.x > midX - 10) {
     if (Math.random() < 0.6) {
       rightPaddle.willHit = true;
       rightPaddle.targetY = ball.y - paddleHeight / 2;
     } else {
       rightPaddle.willHit = false;
-      const offset = (Math.random() * 80 - 40); // near but wrong
+      const offset = (Math.random() * 80 - 40);
       rightPaddle.targetY = ball.y - paddleHeight / 2 + offset;
     }
   }
 
-  // Move smoothly toward target
   if (rightPaddle.targetY < rightPaddle.y) {
     rightPaddle.y -= rightPaddle.vy;
   } else if (rightPaddle.targetY > rightPaddle.y) {
@@ -161,11 +178,8 @@ function updateAI() {
 
 function setFlash(side, color) {
   const until = performance.now() + 1000;
-  if (side === 'left') {
-    leftFlash = { color, until };
-  } else {
-    rightFlash = { color, until };
-  }
+  if (side === 'left') leftFlash = { color, until };
+  else rightFlash = { color, until };
 }
 
 function resetBall(toRight) {
@@ -173,29 +187,23 @@ function resetBall(toRight) {
   ball.y = H / 2;
   ball.isPower = false;
   ball.speed = slowMode ? SLOW_SPEED : BASE_SPEED;
-  const angle = 0.3; // slight angle
+  const angle = 0.3;
   ball.vx = (toRight ? 1 : -1) * ball.speed * Math.cos(angle);
   ball.vy = ball.speed * Math.sin(angle);
   trail.length = 0;
 }
 
 function updateBallSpeed() {
-  if (ball.isPower) {
-    ball.speed = FAST_SPEED;
-  } else {
-    ball.speed = slowMode ? SLOW_SPEED : BASE_SPEED;
-  }
+  if (ball.isPower) ball.speed = FAST_SPEED;
+  else ball.speed = slowMode ? SLOW_SPEED : BASE_SPEED;
+
   const mag = Math.hypot(ball.vx, ball.vy) || 1;
   ball.vx = (ball.vx / mag) * ball.speed;
   ball.vy = (ball.vy / mag) * ball.speed;
 }
 
 function maybePowerShot() {
-  if (Math.random() < 0.3) {
-    ball.isPower = true;
-  } else {
-    ball.isPower = false;
-  }
+  ball.isPower = Math.random() < 0.3;
   updateBallSpeed();
 }
 
@@ -211,17 +219,15 @@ function update() {
   if (paused) return;
 
   handleLeftPaddleInput();
+  handleRightPaddleInput();
   updateAI();
 
-  // Move ball
   ball.x += ball.vx;
   ball.y += ball.vy;
 
-  // Trail
   trail.push({ x: ball.x, y: ball.y, isPower: ball.isPower });
   if (trail.length > TRAIL_MAX_POINTS) trail.shift();
 
-  // Top/bottom walls
   if (ball.y - ballRadius < 0) {
     ball.y = ballRadius;
     ball.vy *= -1;
@@ -231,7 +237,6 @@ function update() {
     ball.vy *= -1;
   }
 
-  // Left paddle collision
   if (rectCircleCollide(leftPaddle.x, leftPaddle.y, paddleWidth, paddleHeight,
                         ball.x, ball.y, ballRadius)) {
     ball.x = leftPaddle.x + paddleWidth + ballRadius;
@@ -241,7 +246,6 @@ function update() {
     maybePowerShot();
   }
 
-  // Right paddle collision
   if (rectCircleCollide(rightPaddle.x, rightPaddle.y, paddleWidth, paddleHeight,
                         ball.x, ball.y, ballRadius)) {
     ball.x = rightPaddle.x - ballRadius;
@@ -251,26 +255,22 @@ function update() {
     maybePowerShot();
   }
 
-  // Out of bounds left (behind left paddle)
   if (ball.x + ballRadius < 0) {
-    setFlash('left', 'red'); // left missed
-    resetBall(true);         // send toward right
+    setFlash('left', 'red');
+    resetBall(true);
   }
 
-  // Out of bounds right (behind right paddle)
   if (ball.x - ballRadius > W) {
-    setFlash('right', 'red'); // right missed
-    resetBall(false);         // send toward left
+    setFlash('right', 'red');
+    resetBall(false);
   }
 
-  // Clear flashes
   const now = performance.now();
   if (leftFlash && now > leftFlash.until) leftFlash = null;
   if (rightFlash && now > rightFlash.until) rightFlash = null;
 }
 
 function drawArena() {
-  // Background halves with flashes
   if (leftFlash) {
     ctx.fillStyle = leftFlash.color;
     ctx.fillRect(0, 0, midX, H);
@@ -287,12 +287,10 @@ function drawArena() {
     ctx.fillRect(midX, 0, midX, H);
   }
 
-  // White outline around arena
   ctx.strokeStyle = 'white';
   ctx.lineWidth = 2;
   ctx.strokeRect(0, 0, W, H);
 
-  // Red center line
   ctx.strokeStyle = 'red';
   ctx.lineWidth = 4;
   ctx.beginPath();
@@ -300,40 +298,31 @@ function drawArena() {
   ctx.lineTo(midX, H);
   ctx.stroke();
 
-  // White right triangles in corners
   ctx.fillStyle = 'white';
   const triSize = 20;
 
-  // Top-left
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(triSize, 0);
   ctx.lineTo(0, triSize);
-  ctx.closePath();
   ctx.fill();
 
-  // Top-right
   ctx.beginPath();
   ctx.moveTo(W, 0);
   ctx.lineTo(W - triSize, 0);
   ctx.lineTo(W, triSize);
-  ctx.closePath();
   ctx.fill();
 
-  // Bottom-left
   ctx.beginPath();
   ctx.moveTo(0, H);
   ctx.lineTo(triSize, H);
   ctx.lineTo(0, H - triSize);
-  ctx.closePath();
   ctx.fill();
 
-  // Bottom-right
   ctx.beginPath();
   ctx.moveTo(W, H);
   ctx.lineTo(W - triSize, H);
   ctx.lineTo(W, H - triSize);
-  ctx.closePath();
   ctx.fill();
 }
 
@@ -344,21 +333,16 @@ function drawPaddles() {
 }
 
 function drawTrail() {
-  for (let i = 0; i < trail.length; i++) {
-    const p = trail[i];
+  for (let p of trail) {
     const dx = ball.x - p.x;
     const dy = ball.y - p.y;
     const dist = Math.hypot(dx, dy);
     if (dist > TRAIL_MAX_DIST) continue;
 
     const alpha = 1 - dist / TRAIL_MAX_DIST;
-    if (p.isPower) {
-      // Fire trail
-      ctx.fillStyle = `rgba(255,140,0,${alpha})`;
-    } else {
-      // Metallic purple trail
-      ctx.fillStyle = `rgba(147,112,219,${alpha})`;
-    }
+    if (p.isPower) ctx.fillStyle = `rgba(255,140,0,${alpha})`;
+    else ctx.fillStyle = `rgba(147,112,219,${alpha})`;
+
     ctx.beginPath();
     ctx.arc(p.x, p.y, ballRadius * 0.9, 0, Math.PI * 2);
     ctx.fill();
@@ -366,11 +350,7 @@ function drawTrail() {
 }
 
 function drawBall() {
-  if (ball.isPower) {
-    ctx.fillStyle = 'orange';
-  } else {
-    ctx.fillStyle = 'blue';
-  }
+  ctx.fillStyle = ball.isPower ? 'orange' : 'blue';
   ctx.beginPath();
   ctx.arc(ball.x, ball.y, ballRadius, 0, Math.PI * 2);
   ctx.fill();
@@ -382,10 +362,7 @@ function drawScores() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
-  // Left score: top middle of left half
   ctx.fillText(leftScore, midX / 2, 10);
-
-  // Right score: top middle of right half
   ctx.fillText(rightScore, midX + midX / 2, 10);
 }
 
@@ -399,11 +376,16 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-// Button behavior
+// Buttons
 slowBtn.onclick = () => {
   slowMode = !slowMode;
   slowBtn.classList.toggle('active', slowMode);
   updateBallSpeed();
+};
+
+twoPBtn.onclick = () => {
+  twoPlayer = !twoPlayer;
+  twoPBtn.classList.toggle('active', twoPlayer);
 };
 
 pauseBtn.onclick = () => {
@@ -419,7 +401,6 @@ resetBtn.onclick = () => {
   setTimeout(() => resetBtn.classList.remove('active'), 150);
 };
 
-// Start: ball goes toward middle-right at slight angle
 resetBall(true);
 loop();
 </script>
