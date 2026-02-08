@@ -21,7 +21,6 @@
   canvas {
     background: black;
     display: block;
-    border: 2px solid white; /* white outline around arena */
   }
   #controls {
     margin-top: 10px;
@@ -44,11 +43,13 @@
 </head>
 <body>
 <h2>Custom Pong</h2>
+
 <div id="controls">
   <button id="slowBtn" class="btn">Slow</button>
   <button id="pauseBtn" class="btn">Pause</button>
   <button id="resetBtn" class="btn">Reset</button>
 </div>
+
 <div id="gameContainer">
   <canvas id="game" width="800" height="500"></canvas>
 </div>
@@ -59,21 +60,22 @@ const ctx = canvas.getContext('2d');
 
 const W = canvas.width;
 const H = canvas.height;
-
-// Arena and layout
 const midX = W / 2;
+
+// Paddles
 const paddleWidth = 12;
 const paddleHeight = 80;
-const paddleOffset = 5; // snug to wall
-const ballRadius = 8;
+const paddleOffset = 5;
+const paddleSpeed = 6;
 
-// Speeds
+// Ball
+const ballRadius = 8;
 const BASE_SPEED = 4;
 const SLOW_SPEED = 2;
-const FAST_SPEED = 8; // power shot speed
-let currentSpeed = BASE_SPEED;
+const FAST_SPEED = 8; // power shot
+let slowMode = false;
+let paused = false;
 
-// Game state
 let leftScore = 0;
 let rightScore = 0;
 
@@ -81,7 +83,7 @@ let ball = {
   x: midX,
   y: H / 2,
   vx: BASE_SPEED,
-  vy: 1.5, // slight angle
+  vy: 1.5,
   speed: BASE_SPEED,
   isPower: false
 };
@@ -89,69 +91,40 @@ let ball = {
 let leftPaddle = {
   x: paddleOffset,
   y: H / 2 - paddleHeight / 2,
-  vy: 6
+  vy: paddleSpeed
 };
 
 let rightPaddle = {
   x: W - paddleOffset - paddleWidth,
   y: H / 2 - paddleHeight / 2,
-  vy: 6,
+  vy: paddleSpeed,
   targetY: H / 2,
   willHit: true
 };
 
 // Trail
 const trail = [];
-const TRAIL_MAX_POINTS = 25;
+const TRAIL_MAX_POINTS = 30;
 const TRAIL_MAX_DIST = 40; // ~2cm-ish visual distance
 
 // Flashes
 let leftFlash = null;  // {color, until}
 let rightFlash = null;
 
-// Control flags
-let paused = false;
-let slowMode = false;
-
 // Buttons
 const slowBtn = document.getElementById('slowBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const resetBtn = document.getElementById('resetBtn');
 
-slowBtn.onclick = () => {
-  slowMode = !slowMode;
-  slowBtn.classList.toggle('active', slowMode);
-  updateBallSpeed();
-};
-
-pauseBtn.onclick = () => {
-  paused = !paused;
-  pauseBtn.classList.toggle('active', paused);
-};
-
-resetBtn.onclick = () => {
-  leftScore = 0;
-  rightScore = 0;
-  resetBall(true);
-  resetBtn.classList.add('active');
-  setTimeout(() => resetBtn.classList.remove('active'), 150);
-};
-
-function updateBallSpeed() {
-  if (ball.isPower) {
-    ball.speed = FAST_SPEED;
-  } else {
-    ball.speed = slowMode ? SLOW_SPEED : BASE_SPEED;
-  }
-  const dir = Math.hypot(ball.vx, ball.vy) || 1;
-  ball.vx = (ball.vx / dir) * ball.speed;
-  ball.vy = (ball.vy / dir) * ball.speed;
-}
-
-// Keyboard control for left paddle (W/S or ArrowUp/ArrowDown)
+// Keyboard for left paddle
 const keys = {};
 window.addEventListener('keydown', e => keys[e.key] = true);
 window.addEventListener('keyup', e => keys[e.key] = false);
+
+function clampPaddle(p) {
+  if (p.y < 0) p.y = 0;
+  if (p.y + paddleHeight > H) p.y = H - paddleHeight;
+}
 
 function handleLeftPaddleInput() {
   if (keys['w'] || keys['ArrowUp']) {
@@ -163,14 +136,9 @@ function handleLeftPaddleInput() {
   clampPaddle(leftPaddle);
 }
 
-function clampPaddle(p) {
-  if (p.y < 0) p.y = 0;
-  if (p.y + paddleHeight > H) p.y = H - paddleHeight;
-}
-
-// AI logic: 60% hit, 40% miss, no jitter
+// AI: 60% hit, 40% miss, no jitter
 function updateAI() {
-  // Only update decision when ball is moving toward right
+  // Only choose a new target when ball is clearly coming toward right side
   if (ball.vx > 0 && ball.x > midX - 10) {
     if (Math.random() < 0.6) {
       rightPaddle.willHit = true;
@@ -182,30 +150,15 @@ function updateAI() {
     }
   }
 
-  // Move smoothly toward targetY
-  const centerY = rightPaddle.y;
-  if (rightPaddle.targetY < centerY) {
+  // Move smoothly toward target
+  if (rightPaddle.targetY < rightPaddle.y) {
     rightPaddle.y -= rightPaddle.vy;
-  } else if (rightPaddle.targetY > centerY) {
+  } else if (rightPaddle.targetY > rightPaddle.y) {
     rightPaddle.y += rightPaddle.vy;
   }
   clampPaddle(rightPaddle);
 }
 
-// Ball reset: goes from red line toward side that should receive it
-function resetBall(toRight) {
-  ball.x = midX;
-  ball.y = H / 2;
-  ball.isPower = false;
-  currentSpeed = slowMode ? SLOW_SPEED : BASE_SPEED;
-  ball.speed = currentSpeed;
-  const angle = 0.3; // slight angle
-  ball.vx = (toRight ? 1 : -1) * ball.speed * Math.cos(angle);
-  ball.vy = ball.speed * Math.sin(angle);
-  trail.length = 0;
-}
-
-// Flash helpers
 function setFlash(side, color) {
   const until = performance.now() + 1000;
   if (side === 'left') {
@@ -215,7 +168,37 @@ function setFlash(side, color) {
   }
 }
 
-// Collision detection
+function resetBall(toRight) {
+  ball.x = midX;
+  ball.y = H / 2;
+  ball.isPower = false;
+  ball.speed = slowMode ? SLOW_SPEED : BASE_SPEED;
+  const angle = 0.3; // slight angle
+  ball.vx = (toRight ? 1 : -1) * ball.speed * Math.cos(angle);
+  ball.vy = ball.speed * Math.sin(angle);
+  trail.length = 0;
+}
+
+function updateBallSpeed() {
+  if (ball.isPower) {
+    ball.speed = FAST_SPEED;
+  } else {
+    ball.speed = slowMode ? SLOW_SPEED : BASE_SPEED;
+  }
+  const mag = Math.hypot(ball.vx, ball.vy) || 1;
+  ball.vx = (ball.vx / mag) * ball.speed;
+  ball.vy = (ball.vy / mag) * ball.speed;
+}
+
+function maybePowerShot() {
+  if (Math.random() < 0.3) {
+    ball.isPower = true;
+  } else {
+    ball.isPower = false;
+  }
+  updateBallSpeed();
+}
+
 function rectCircleCollide(px, py, pw, ph, cx, cy, cr) {
   const testX = Math.max(px, Math.min(cx, px + pw));
   const testY = Math.max(py, Math.min(cy, py + ph));
@@ -234,7 +217,7 @@ function update() {
   ball.x += ball.vx;
   ball.y += ball.vy;
 
-  // Add to trail
+  // Trail
   trail.push({ x: ball.x, y: ball.y, isPower: ball.isPower });
   if (trail.length > TRAIL_MAX_POINTS) trail.shift();
 
@@ -249,7 +232,8 @@ function update() {
   }
 
   // Left paddle collision
-  if (rectCircleCollide(leftPaddle.x, leftPaddle.y, paddleWidth, paddleHeight, ball.x, ball.y, ballRadius)) {
+  if (rectCircleCollide(leftPaddle.x, leftPaddle.y, paddleWidth, paddleHeight,
+                        ball.x, ball.y, ballRadius)) {
     ball.x = leftPaddle.x + paddleWidth + ballRadius;
     ball.vx = Math.abs(ball.vx);
     leftScore++;
@@ -258,7 +242,8 @@ function update() {
   }
 
   // Right paddle collision
-  if (rectCircleCollide(rightPaddle.x, rightPaddle.y, paddleWidth, paddleHeight, ball.x, ball.y, ballRadius)) {
+  if (rectCircleCollide(rightPaddle.x, rightPaddle.y, paddleWidth, paddleHeight,
+                        ball.x, ball.y, ballRadius)) {
     ball.x = rightPaddle.x - ballRadius;
     ball.vx = -Math.abs(ball.vx);
     rightScore++;
@@ -266,36 +251,26 @@ function update() {
     maybePowerShot();
   }
 
-  // Out of bounds left
+  // Out of bounds left (behind left paddle)
   if (ball.x + ballRadius < 0) {
     setFlash('left', 'red'); // left missed
-    resetBall(true); // send toward right
+    resetBall(true);         // send toward right
   }
 
-  // Out of bounds right
+  // Out of bounds right (behind right paddle)
   if (ball.x - ballRadius > W) {
     setFlash('right', 'red'); // right missed
-    resetBall(false); // send toward left
+    resetBall(false);         // send toward left
   }
 
-  // Clear expired flashes
+  // Clear flashes
   const now = performance.now();
   if (leftFlash && now > leftFlash.until) leftFlash = null;
   if (rightFlash && now > rightFlash.until) rightFlash = null;
 }
 
-function maybePowerShot() {
-  if (Math.random() < 0.3) {
-    ball.isPower = true;
-  } else {
-    ball.isPower = false;
-  }
-  updateBallSpeed();
-}
-
-// Drawing
 function drawArena() {
-  // Background flashes
+  // Background halves with flashes
   if (leftFlash) {
     ctx.fillStyle = leftFlash.color;
     ctx.fillRect(0, 0, midX, H);
@@ -312,7 +287,7 @@ function drawArena() {
     ctx.fillRect(midX, 0, midX, H);
   }
 
-  // White outline (border already from CSS, but reinforce)
+  // White outline around arena
   ctx.strokeStyle = 'white';
   ctx.lineWidth = 2;
   ctx.strokeRect(0, 0, W, H);
@@ -325,9 +300,10 @@ function drawArena() {
   ctx.lineTo(midX, H);
   ctx.stroke();
 
-  // Corner right triangles
+  // White right triangles in corners
   ctx.fillStyle = 'white';
   const triSize = 20;
+
   // Top-left
   ctx.beginPath();
   ctx.moveTo(0, 0);
@@ -335,6 +311,7 @@ function drawArena() {
   ctx.lineTo(0, triSize);
   ctx.closePath();
   ctx.fill();
+
   // Top-right
   ctx.beginPath();
   ctx.moveTo(W, 0);
@@ -342,6 +319,7 @@ function drawArena() {
   ctx.lineTo(W, triSize);
   ctx.closePath();
   ctx.fill();
+
   // Bottom-left
   ctx.beginPath();
   ctx.moveTo(0, H);
@@ -349,6 +327,7 @@ function drawArena() {
   ctx.lineTo(0, H - triSize);
   ctx.closePath();
   ctx.fill();
+
   // Bottom-right
   ctx.beginPath();
   ctx.moveTo(W, H);
@@ -403,10 +382,10 @@ function drawScores() {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
-  // Left score: left side of red line, top middle of that half
+  // Left score: top middle of left half
   ctx.fillText(leftScore, midX / 2, 10);
 
-  // Right score: right side of red line, top middle of that half
+  // Right score: top middle of right half
   ctx.fillText(rightScore, midX + midX / 2, 10);
 }
 
@@ -420,7 +399,27 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-// Initial ball direction: toward middle-right at slight angle
+// Button behavior
+slowBtn.onclick = () => {
+  slowMode = !slowMode;
+  slowBtn.classList.toggle('active', slowMode);
+  updateBallSpeed();
+};
+
+pauseBtn.onclick = () => {
+  paused = !paused;
+  pauseBtn.classList.toggle('active', paused);
+};
+
+resetBtn.onclick = () => {
+  leftScore = 0;
+  rightScore = 0;
+  resetBall(true);
+  resetBtn.classList.add('active');
+  setTimeout(() => resetBtn.classList.remove('active'), 150);
+};
+
+// Start: ball goes toward middle-right at slight angle
 resetBall(true);
 loop();
 </script>
