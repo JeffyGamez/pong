@@ -4,27 +4,50 @@
 <meta charset="UTF-8">
 <title>Simple Pong</title>
 <style>
-  body { margin:0; background:black; display:flex; justify-content:center; align-items:center; height:100vh; }
-  canvas { border:2px solid white; }
+  body { margin:0; background:black; display:flex; flex-direction:column; align-items:center; }
+  canvas { border:2px solid white; margin-top:10px; }
+
+  .buttons { margin-top:10px; display:flex; gap:10px; }
+
+  button {
+    padding:10px 20px;
+    font-size:18px;
+    cursor:pointer;
+    background:blue;
+    color:white;
+    border:none;
+    border-radius:6px;
+  }
+
+  button.selected {
+    background:yellow;
+    color:black;
+  }
 </style>
 </head>
 <body>
 
+<!-- UI BUTTONS (RESTORED) -->
+<div class="buttons">
+  <button id="slowBtn" onclick="setSlow()">Slow</button>
+  <button id="easyBtn" onclick="setDifficulty('easy')">Easy</button>
+  <button id="normalBtn" onclick="setDifficulty('normal')">Normal</button>
+  <button id="hardBtn" onclick="setDifficulty('hard')">Hard</button>
+</div>
+
+<!-- GAME CANVAS -->
 <canvas id="game" width="800" height="500"></canvas>
 
 <script>
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-// PADDLES
+// PADDLES (snug against edges)
 const paddleWidth = 15;
 const paddleHeight = 100;
 
-let leftPaddle = { x: 20, y: canvas.height/2 - paddleHeight/2, speed: 6 };
-let rightPaddle = { x: canvas.width - 35, y: canvas.height/2 - paddleHeight/2, speed: 4 };
-
-// AI MISS CHANCE
-let aiMistakeChance = 0.15; // 15% chance to move incorrectly
+let leftPaddle = { x: 0, y: canvas.height/2 - paddleHeight/2, speed: 6 };
+let rightPaddle = { x: canvas.width - paddleWidth, y: canvas.height/2 - paddleHeight/2, speed: 4 };
 
 // BALL
 let ball = {
@@ -32,12 +55,78 @@ let ball = {
     y: canvas.height/2,
     size: 12,
     speedX: 4,
-    speedY: 3
+    speedY: 3,
+    baseSpeedX: 4,
+    baseSpeedY: 3
 };
+
+// TRAIL SYSTEM
+let trail = [];
 
 // SCORES
 let leftScore = 0;
 let rightScore = 0;
+
+// GAME STATE
+let gameOver = false;
+
+// DIFFICULTY RATIOS
+let hitChance = 0.55; // normal default
+
+// FLASH SYSTEM
+let leftFlash = null;
+let rightFlash = null;
+let flashTimerLeft = 0;
+let flashTimerRight = 0;
+
+// AI MEMORY
+let aiTimer = 0;
+let aiTargetY = canvas.height / 2;
+
+// BUTTON HIGHLIGHTING
+function selectButton(btn) {
+    document.querySelectorAll("button").forEach(b => b.classList.remove("selected"));
+    document.getElementById(btn).classList.add("selected");
+}
+
+// SLOW MODE
+let slowMode = false;
+
+function setSlow() {
+    slowMode = true;
+    selectButton("slowBtn");
+
+    ball.speedX = ball.baseSpeedX * 0.5 * Math.sign(ball.speedX || 1);
+    ball.speedY = ball.baseSpeedY * 0.5 * Math.sign(ball.speedY || 1);
+}
+
+// SET DIFFICULTY + AI PERSONALITIES
+function setDifficulty(mode) {
+    slowMode = false;
+
+    if (mode === "easy") {
+        hitChance = 0.30;
+        rightPaddle.speed = 3; // lazy
+        selectButton("easyBtn");
+    }
+    if (mode === "normal") {
+        hitChance = 0.55;
+        rightPaddle.speed = 4; // smooth
+        selectButton("normalBtn");
+    }
+    if (mode === "hard") {
+        hitChance = 0.80;
+        rightPaddle.speed = 5; // fast
+        selectButton("hardBtn");
+    }
+
+    // Reset ball speed (never speeds up)
+    ball.speedX = ball.baseSpeedX * Math.sign(ball.speedX || 1);
+    ball.speedY = ball.baseSpeedY * Math.sign(ball.speedY || 1);
+}
+
+// AUTO-SELECT NORMAL MODE
+setDifficulty("normal");
 
 // INPUT (iPad-safe)
 let keys = {};
@@ -48,12 +137,30 @@ window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
+    // FLASH LEFT SIDE
+    if (leftFlash) {
+        ctx.fillStyle = leftFlash === "green" ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)";
+        ctx.fillRect(0, 0, canvas.width/2, canvas.height);
+    }
+
+    // FLASH RIGHT SIDE
+    if (rightFlash) {
+        ctx.fillStyle = rightFlash === "green" ? "rgba(0,255,0,0.6)" : "rgba(255,0,0,0.6)";
+        ctx.fillRect(canvas.width/2, 0, canvas.width/2, canvas.height);
+    }
+
     // Middle red line
     ctx.strokeStyle = "red";
     ctx.beginPath();
     ctx.moveTo(canvas.width/2, 0);
     ctx.lineTo(canvas.width/2, canvas.height);
     ctx.stroke();
+
+    // TRAIL (metallic purple squares)
+    trail.forEach(t => {
+        ctx.fillStyle = `rgba(200, 0, 255, ${t.life})`;
+        ctx.fillRect(t.x, t.y, ball.size, ball.size);
+    });
 
     // Left paddle
     ctx.fillStyle = "white";
@@ -71,70 +178,165 @@ function draw() {
     ctx.font = "30px Arial";
     ctx.fillText(leftScore, canvas.width/2 - 60, 40);
     ctx.fillText(rightScore, canvas.width/2 + 40, 40);
+
+    // WIN SCREEN
+    if (gameOver) {
+        ctx.fillStyle = "yellow";
+        ctx.font = "60px Arial";
+        ctx.fillText(winnerText, canvas.width/2 - 200, canvas.height/2);
+
+        ctx.font = "30px Arial";
+        ctx.fillText("Tap to Play Again", canvas.width/2 - 140, canvas.height/2 + 60);
+    }
 }
 
 // UPDATE GAME LOGIC
+let winnerText = "";
+
 function update() {
-    // Left paddle movement (W = up, D = down)
+    if (gameOver) return;
+
+    // FLASH TIMERS
+    if (flashTimerLeft > 0) {
+        flashTimerLeft--;
+        if (flashTimerLeft === 0) leftFlash = null;
+    }
+    if (flashTimerRight > 0) {
+        flashTimerRight--;
+        if (flashTimerRight === 0) rightFlash = null;
+    }
+
+    // Left paddle movement
     if (keys["w"]) leftPaddle.y -= leftPaddle.speed;
     if (keys["d"]) leftPaddle.y += leftPaddle.speed;
 
-    // Keep left paddle on screen
     leftPaddle.y = Math.max(0, Math.min(canvas.height - paddleHeight, leftPaddle.y));
 
-    // AI PADDLE MOVEMENT WITH MISTAKES
-    let aiCenter = rightPaddle.y + paddleHeight/2;
+    // --- AI movement with stable target + deadzone + corner escape ---
+    let aiCenter = rightPaddle.y + paddleHeight / 2;
 
-    if (Math.random() < aiMistakeChance) {
-        // AI makes a mistake: move the wrong way
-        if (ball.y < aiCenter) rightPaddle.y += rightPaddle.speed;
-        else rightPaddle.y -= rightPaddle.speed;
-    } else {
-        // AI moves correctly
-        if (ball.y < aiCenter) rightPaddle.y -= rightPaddle.speed;
-        if (ball.y > aiCenter) rightPaddle.y += rightPaddle.speed;
+    aiTimer++;
+    if (aiTimer >= 20) {
+        aiTimer = 0;
+
+        if (Math.random() < hitChance) {
+            aiTargetY = ball.y;
+        } else {
+            let offset = (Math.random() * 200 + 150) * (Math.random() < 0.5 ? -1 : 1);
+            aiTargetY = ball.y + offset;
+        }
     }
 
-    // Keep right paddle on screen
+    // Deadzone (prevents jitter)
+    let deadzone = 20;
+
+    if (Math.abs(aiTargetY - aiCenter) > deadzone) {
+        if (aiTargetY < aiCenter) rightPaddle.y -= rightPaddle.speed;
+        if (aiTargetY > aiCenter) rightPaddle.y += rightPaddle.speed;
+    }
+
+    // Corner escape rule
+    if (ball.y < 40 || ball.y > canvas.height - 40) {
+        aiTargetY = canvas.height / 2;
+    }
+
     rightPaddle.y = Math.max(0, Math.min(canvas.height - paddleHeight, rightPaddle.y));
 
     // Move ball
     ball.x += ball.speedX;
     ball.y += ball.speedY;
 
+    // TRAIL UPDATE
+    trail.push({ x: ball.x, y: ball.y, life: 0.9 });
+    if (trail.length > 40) trail.shift();
+    trail.forEach(t => t.life -= 0.03);
+    trail = trail.filter(t => t.life > 0);
+
     // Ball collision with top/bottom
     if (ball.y <= 0 || ball.y + ball.size >= canvas.height) {
         ball.speedY *= -1;
     }
 
-    // Ball collision with left paddle
+    // LEFT paddle hit
     if (ball.x <= leftPaddle.x + paddleWidth &&
         ball.y + ball.size >= leftPaddle.y &&
         ball.y <= leftPaddle.y + paddleHeight) {
+
         ball.speedX *= -1;
         leftScore++;
-        ball.speedX *= 1.05;
-        ball.speedY *= 1.05;
+
+        leftFlash = "green";
+        flashTimerLeft = 60;
+
+        // Prevent corner infinite bounce
+        if (ball.y < 20 || ball.y > canvas.height - 20) {
+            ball.speedY = (Math.random() * 4 + 2) * (Math.random() < 0.5 ? -1 : 1);
+        }
     }
 
-    // Ball collision with right paddle
+    // RIGHT paddle hit
     if (ball.x + ball.size >= rightPaddle.x &&
         ball.y + ball.size >= rightPaddle.y &&
         ball.y <= rightPaddle.y + paddleHeight) {
+
         ball.speedX *= -1;
         rightScore++;
-        ball.speedX *= 1.05;
-        ball.speedY *= 1.05;
+
+        rightFlash = "green";
+        flashTimerRight = 60;
+
+        // Prevent corner infinite bounce
+        if (ball.y < 20 || ball.y > canvas.height - 20) {
+            ball.speedY = (Math.random() * 4 + 2) * (Math.random() < 0.5 ? -1 : 1);
+        }
     }
 
-    // Ball goes off screen (reset)
-    if (ball.x < 0 || ball.x > canvas.width) {
-        ball.x = canvas.width/2;
-        ball.y = canvas.height/2;
-        ball.speedX = 4 * (Math.random() > 0.5 ? 1 : -1);
-        ball.speedY = 3 * (Math.random() > 0.5 ? 1 : -1);
+    // WIN CONDITION
+    if (leftScore >= 20) {
+        winnerText = "YOU WIN!";
+        gameOver = true;
+    }
+    if (rightScore >= 20) {
+        winnerText = "AI WINS!";
+        gameOver = true;
+    }
+
+    // MISSES + FLASH + FIXED RESET LOGIC
+    if (ball.x < 0) {
+        leftFlash = "red";
+        flashTimerLeft = 60;
+
+        // Ball goes to AI side
+        ball.x = canvas.width / 2;
+        ball.y = canvas.height / 2;
+        ball.speedX = Math.abs(ball.baseSpeedX);
+        ball.speedY = (Math.random() * 4 - 2);
+        if (slowMode) ball.speedX *= 0.5;
+    }
+
+    if (ball.x > canvas.width) {
+        rightFlash = "red";
+        flashTimerRight = 60;
+
+        // Ball goes to player side
+        ball.x = canvas.width / 2;
+        ball.y = canvas.height / 2;
+        ball.speedX = -Math.abs(ball.baseSpeedX);
+        ball.speedY = (Math.random() * 4 - 2);
+        if (slowMode) ball.speedX *= 0.5;
     }
 }
+
+// RESET GAME ON TAP
+canvas.addEventListener("mousedown", () => {
+    if (gameOver) {
+        leftScore = 0;
+        rightScore = 0;
+        gameOver = false;
+        ball.x = canvas.width/2;
+        ball.y = canvas.height/2;
+    }
+});
 
 // GAME LOOP
 function loop() {
