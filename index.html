@@ -12,21 +12,33 @@
     align-items: center;
     color: white;
     font-family: Arial, sans-serif;
+    overflow: hidden; /* Prevent scrolling */
     user-select: none;
   }
+
+  #gameWrapper {
+    position: relative;
+    transform-origin: top center;
+  }
+
   #gameContainer {
     margin-top: 10px;
     position: relative;
+    width: 800px;
+    height: 500px;
   }
+
   canvas {
     background: black;
     display: block;
   }
+
   #controls {
     margin-top: 10px;
     display: flex;
     gap: 10px;
   }
+
   .btn {
     padding: 6px 14px;
     background: blue;
@@ -35,12 +47,13 @@
     cursor: pointer;
     font-weight: bold;
   }
+
   .btn.active {
     background: yellow;
     color: black;
   }
 
-  /* ⭐ NEW: Floating Speed Indicator */
+  /* Floating Speed Indicator */
   #speedIndicator {
     position: absolute;
     left: -120px;
@@ -64,14 +77,40 @@
   <button id="resetBtn" class="btn">Reset</button>
 </div>
 
-<div id="gameContainer">
-  <!-- ⭐ NEW: Speed Indicator -->
-  <div id="speedIndicator">Normal</div>
-
-  <canvas id="game" width="800" height="500"></canvas>
+<!-- Wrapper for scaling -->
+<div id="gameWrapper">
+  <div id="gameContainer">
+    <div id="speedIndicator">Normal</div>
+    <canvas id="game" width="800" height="500"></canvas>
+  </div>
 </div>
 
 <script>
+/* ------------------ AUTO-DETECT ORIENTATION SCALING ------------------ */
+
+function scaleGame() {
+  const wrapper = document.getElementById("gameWrapper");
+
+  const gameWidth = 800;
+  const gameHeight = 500;
+
+  const availableWidth = window.innerWidth;
+  const availableHeight = window.innerHeight - 120; // space for buttons + title
+
+  const scaleX = availableWidth / gameWidth;
+  const scaleY = availableHeight / gameHeight;
+
+  const scale = Math.min(scaleX, scaleY);
+
+  wrapper.style.transform = `scale(${scale})`;
+}
+
+window.addEventListener("resize", scaleGame);
+window.addEventListener("orientationchange", scaleGame);
+window.addEventListener("load", scaleGame);
+
+/* ------------------ GAME LOGIC BELOW (unchanged except AI + speed indicator) ------------------ */
+
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
@@ -79,17 +118,14 @@ const W = canvas.width;
 const H = canvas.height;
 const midX = W / 2;
 
-// Triangle size
 const triSize = 20;
 
-// Paddles
 const paddleWidth = 12;
 const paddleHeight = 80;
 const paddleOffset = 5;
 const paddleSpeed = 6;
 const aiSpeed = paddleSpeed - 1;
 
-// Ball
 const ballRadius = 8;
 const BASE_SPEED = 4;
 const FAST_MODE_SPEED = 6;
@@ -126,46 +162,36 @@ let rightPaddle = {
   targetY: H / 2
 };
 
-// ⭐ AI frame counter (now 20 frames)
 let aiFrameCounter = 0;
 
-// Trail
 const trail = [];
 const TRAIL_MAX_POINTS = 30;
 const TRAIL_MAX_DIST = 40;
 
-// Flashes
 let leftFlash = null;
 let rightFlash = null;
 
-// Buttons
 const slowBtn = document.getElementById('slowBtn');
 const fastBtn = document.getElementById('fastBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const resetBtn = document.getElementById('resetBtn');
 const twoPBtn = document.getElementById('twoPBtn');
 
-// Keyboard
 const keys = {};
 window.addEventListener('keydown', e => keys[e.key] = true);
 window.addEventListener('keyup', e => keys[e.key] = false);
 
 function clampPaddle(p) {
-  if (p.y < 0) p.y = 0;
-  if (p.y + paddleHeight > H) p.y = H - paddleHeight;
-
   if (p.y < triSize) p.y = triSize;
   if (p.y + paddleHeight > H - triSize) p.y = H - triSize - paddleHeight;
 }
 
-// LEFT PADDLE: W = up, D = down
 function handleLeftPaddleInput() {
   if (keys['w'] || keys['W']) leftPaddle.y -= leftPaddle.vy;
   if (keys['d'] || keys['D']) leftPaddle.y += leftPaddle.vy;
   clampPaddle(leftPaddle);
 }
 
-// RIGHT PADDLE: Left Arrow = up, Right Arrow = down
 function handleRightPaddleInput() {
   if (!twoPlayer) return;
 
@@ -175,7 +201,6 @@ function handleRightPaddleInput() {
   clampPaddle(rightPaddle);
 }
 
-// ⭐ AI updates every 20 frames when ball is moving toward it
 function updateAI() {
   if (twoPlayer) return;
 
@@ -188,8 +213,7 @@ function updateAI() {
       if (Math.random() < 0.55) {
         rightPaddle.targetY = ball.y - paddleHeight / 2;
       } else {
-        const offset = (Math.random() * 80 - 40);
-        rightPaddle.targetY = ball.y - paddleHeight / 2 + offset;
+        rightPaddle.targetY = ball.y - paddleHeight / 2 + (Math.random() * 80 - 40);
       }
     }
   }
@@ -221,18 +245,13 @@ function resetBall(toRight) {
   trail.length = 0;
 }
 
-// ⭐ Fast overrides Slow
 function updateBallSpeed() {
   if (ball.isPower) {
     ball.speed = FIREBALL_SPEED;
   } else {
-    if (fastMode) {
-      ball.speed = FAST_MODE_SPEED;
-    } else if (slowMode) {
-      ball.speed = SLOW_SPEED;
-    } else {
-      ball.speed = BASE_SPEED;
-    }
+    if (fastMode) ball.speed = FAST_MODE_SPEED;
+    else if (slowMode) ball.speed = SLOW_SPEED;
+    else ball.speed = BASE_SPEED;
   }
 
   const mag = Math.hypot(ball.vx, ball.vy) || 1;
@@ -247,10 +266,7 @@ function maybePowerShot() {
 
 function reflect(vx, vy, nx, ny) {
   const dot = vx * nx + vy * ny;
-  return {
-    vx: vx - 2 * dot * nx,
-    vy: vy - 2 * dot * ny
-  };
+  return { vx: vx - 2 * dot * nx, vy: vy - 2 * dot * ny };
 }
 
 function checkLineCollision(x1, y1, x2, y2) {
@@ -271,10 +287,9 @@ function checkLineCollision(x1, y1, x2, y2) {
 
   const dx = P.x - closestX;
   const dy = P.y - closestY;
-  const distSq = dx * dx + dy * dy;
 
-  if (distSq <= ballRadius * ballRadius) {
-    const dist = Math.sqrt(distSq) || 1;
+  if (dx * dx + dy * dy <= ballRadius * ballRadius) {
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
     const nx = dx / dist;
     const ny = dy / dist;
 
@@ -297,9 +312,9 @@ function checkTriangleBounce() {
 function rectCircleCollide(px, py, pw, ph, cx, cy, cr) {
   const testX = Math.max(px, Math.min(cx, px + pw));
   const testY = Math.max(py, Math.min(cy, py + ph));
-  const distX = cx - testX;
-  const distY = cy - testY;
-  return (distX * distX + distY * distY) <= cr * cr;
+  const dx = cx - testX;
+  const dy = cy - testY;
+  return dx * dx + dy * dy <= cr * cr;
 }
 
 function update() {
@@ -438,8 +453,9 @@ function drawTrail() {
     if (dist > TRAIL_MAX_DIST) continue;
 
     const alpha = 1 - dist / TRAIL_MAX_DIST;
-    if (p.isPower) ctx.fillStyle = `rgba(255,140,0,${alpha})`;
-    else ctx.fillStyle = `rgba(147,112,219,${alpha})`;
+    ctx.fillStyle = p.isPower
+      ? `rgba(255,140,0,${alpha})`
+      : `rgba(147,112,219,${alpha})`;
 
     ctx.beginPath();
     ctx.arc(p.x, p.y, ballRadius * 0.9, 0, Math.PI * 2);
@@ -484,7 +500,7 @@ function updateSpeedIndicator() {
 
 function loop() {
   update();
-  updateSpeedIndicator(); // ⭐ NEW
+  updateSpeedIndicator();
   drawArena();
   drawTrail();
   drawPaddles();
@@ -493,7 +509,6 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-// Buttons
 slowBtn.onclick = () => {
   slowMode = !slowMode;
   slowBtn.classList.toggle('active', slowMode);
